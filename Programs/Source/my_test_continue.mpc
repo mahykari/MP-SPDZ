@@ -1,0 +1,29 @@
+# Load previous accumulator value from persistence
+start_pos = 0
+stop_pos, loaded = sint.read_from_file(start_pos, n_items=1)
+accumulator = loaded[0]
+
+print_ln("Loaded accumulator: %s", accumulator.reveal())
+
+# Number of additional rounds
+n_rounds = 10
+
+print_ln("Continuing for %s more rounds", n_rounds)
+
+# Run for more rounds
+for round_num in range(n_rounds):
+    # Get input from party 0
+    new_value = sint.get_input_from(0)
+    
+    # Add to accumulator
+    accumulator = accumulator + new_value
+    
+    # Reveal and print
+    revealed_acc = accumulator.reveal()
+    print_ln("Round %s: Accumulator = %s", round_num + 1, revealed_acc)
+
+# Save the updated accumulator
+sint.write_to_file([accumulator])
+print_ln("Updated accumulator saved")
+
+print_ln("Final accumulator value: %s", accumulator.reveal())

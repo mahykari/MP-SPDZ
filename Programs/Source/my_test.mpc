@@ -1,0 +1,25 @@
+# Initialize shared accumulator
+accumulator = sint(0)
+
+# Number of rounds
+n_rounds = 100
+
+print_ln("Starting accumulator example with %s rounds", n_rounds)
+
+# Run for a fixed number of rounds
+for round_num in range(n_rounds):
+    # Get input from party 0
+    new_value = sint.get_input_from(0)
+    
+    # Add to accumulator
+    accumulator = accumulator + new_value
+    
+    # Reveal and print
+    revealed_acc = accumulator.reveal()
+    print_ln("Round %s: Accumulator = %s", round_num + 1, revealed_acc)
+
+# Save the accumulator share to file
+sint.write_to_file([accumulator])
+print_ln("Accumulator saved to file")
+
+print_ln("Final accumulator value: %s", accumulator.reveal())

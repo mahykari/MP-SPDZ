@@ -1,0 +1,8 @@
+i = regint(0)
+
+@while_do(lambda: i < 5)
+def _():
+    print_ln("i = %s", i)
+    i.update(i + 1)
+
+print_ln("Done")
