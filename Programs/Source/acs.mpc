@@ -1,0 +1,109 @@
+# MP-SPDZ equivalent of Verilog Spec module
+# Monitors door entry/exit counts and detects fault conditions
+
+# Party setup:
+# - Parties 0, 1, 2 run the MPC protocol (3 parties)
+# - External sensor system connects as a client
+# - Client sends door data securely without learning the function
+# Run with: Scripts/compile-run.py -N 3 <protocol> acs
+# Client: Use ExternalIO/Client.hpp or Python client
+
+from Compiler.library import *
+
+# Parameters (configure as needed)
+N_EX = 10      # number of external doors
+N_IN = 5       # number of internal doors (not used in current logic)
+PORT_NUM = 14000  # Port for client connections
+
+def spec_function(cntA_in, cntB_in, door_data):
+  """
+  Door monitoring specification function
+  
+  Args:
+    cntA_in: Current count A (sint)
+    cntB_in: Current count B (sint)
+    door_data: List of N_EX tuples, each containing 
+               (enteredA, exitedA, enteredB, exitedB) as sints
+  
+  Returns:
+    (fault, new_cntA, new_cntB) where fault is 1 if cntA < cntB, else 0
+  """
+  # Initialize with current monitor values
+  cntA = cntA_in
+  cntB = cntB_in
+  
+  # Process each external door
+  for i in range(N_EX):
+    enteredA, exitedA, enteredB, exitedB = door_data[i]
+    cntA = cntA + enteredA - exitedA
+    cntB = cntB + enteredB - exitedB
+  
+  # Check fault condition: cntA < cntB
+  fault = cntA < cntB
+  
+  # If fault, keep original monitor values; otherwise update
+  new_cntA = (1 - fault) * cntA + fault * cntA_in
+  new_cntB = (1 - fault) * cntB + fault * cntB_in
+  
+  return fault, new_cntA, new_cntB
+
+
+# Example usage
+print_ln("Door Monitoring System")
+
+# Initialize to zero for first run
+# (For persistence across runs, use sint.read_from_file/write_to_file)
+cntA = sint(0)
+cntB = sint(0)
+print_ln("Initialized state to zero")
+
+# Setup client connection for sensor data
+listen_for_clients(PORT_NUM)
+print_ln("Listening for sensor client on port %s", PORT_NUM)
+
+# Accept connection from sensor client
+SENSOR_CLIENT_ID = accept_client_connection(PORT_NUM)
+print_ln("Sensor client connected with ID %s", SENSOR_CLIENT_ID)
+
+# Receive door data from sensor client
+# Client sends 4 values per door: enteredA, exitedA, enteredB, exitedB
+# Total: N_EX * 4 values
+print_ln("Receiving %s values from sensor client...", N_EX * 4)
+all_values = sint.receive_from_client(N_EX * 4, SENSOR_CLIENT_ID)
+
+# Parse into door_data structure
+door_data = []
+for i in range(N_EX):
+  idx = i * 4
+  enteredA = all_values[idx]
+  exitedA = all_values[idx + 1]
+  enteredB = all_values[idx + 2]
+  exitedB = all_values[idx + 3]
+  door_data.append((enteredA, exitedA, enteredB, exitedB))
+
+print_ln("Received data for %s doors from sensor client", N_EX)
+
+# Run the specification function
+fault, new_cntA, new_cntB = spec_function(cntA, cntB, door_data)
+
+# Reveal results
+fault_revealed = fault.reveal()
+cntA_revealed = new_cntA.reveal()
+cntB_revealed = new_cntB.reveal()
+
+print_ln("Fault: %s", fault_revealed)
+print_ln("Count A: %s", cntA_revealed)
+print_ln("Count B: %s", cntB_revealed)
+
+# Optionally send results back to sensor client
+# Client can receive: fault, cntA, cntB  
+print_ln("Revealing results to client...")
+sint.reveal_to_clients([SENSOR_CLIENT_ID], [fault, new_cntA, new_cntB])
+
+# Close client connection
+closeclientconnection(SENSOR_CLIENT_ID)
+print_ln("Client connection closed")
+
+# Save protocol state to file (commented out for now)
+# sint.write_to_file([new_cntA, new_cntB])
+# print_ln("Protocol state saved to file")
