@@ -1,9 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """
 Sensor client for door monitoring system (acs.mpc)
 Sends door sensor data to MPC parties and receives results.
 
-Usage: ./acs-sensor-client.py <client_id> <n_parties> <door_data_file>
+Usage: ./acs-sensor-client.py <client_id> <n_parties> [<door_data_file>]
 
 Example: ./acs-sensor-client.py 0 3 sensor_data.txt
 """
@@ -11,7 +11,18 @@ Example: ./acs-sensor-client.py 0 3 sensor_data.txt
 import sys
 import os
 
-sys.path.append('.')
+# Setup paths for MP-SPDZ modules
+script_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.dirname(script_dir)
+
+# Activate .venv virtual environment
+venv_lib = os.path.join(base_dir, '.venv', 'lib')
+for item in os.listdir(venv_lib):
+  if item.startswith('python'):
+    sys.path.insert(0, os.path.join(venv_lib, item, 'site-packages'))
+    break
+
+sys.path.insert(0, base_dir)
 
 from client import *
 from domains import *
