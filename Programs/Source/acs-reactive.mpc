@@ -1,15 +1,22 @@
 # Reactive Door Monitoring System
 # Continuously processes sensor data and maintains state across iterations
 # Run with: Scripts/compile-run.py <protocol> acs-reactive -- -N 3
+# Parameters: <n_doors> <n_iterations>
+# Example: Scripts/compile-run.py shamir acs-reactive -- -N 3 10 5
 
 from Compiler.library import *
 
 # Performance optimization
 program.use_edabit(True)
 
-# Parameters
-N_EX = 10           # number of external doors
-N_ITERATIONS = 5    # number of sensor readings to process
+# Parse command-line arguments
+if len(program.args) >= 3:
+    N_EX = int(program.args[1])           # number of external doors
+    N_ITERATIONS = int(program.args[2])   # number of sensor readings to process
+else:
+    N_EX = 10           # default: number of external doors
+    N_ITERATIONS = 5    # default: number of sensor readings to process
+
 PORT_NUM = 14000    # Port for client connections
 
 def spec_function(cntA_in, cntB_in, door_data):
@@ -44,8 +51,10 @@ def spec_function(cntA_in, cntB_in, door_data):
   return fault, new_cntA, new_cntB
 
 
+print_ln("="*60)
 print_ln("Reactive Door Monitoring System")
-print_ln("Processing %s iterations", N_ITERATIONS)
+print_ln("Configuration: %s doors, %s iterations", N_EX, N_ITERATIONS)
+print_ln("="*60)
 
 # Initialize state to zero
 cntA = sint(0)
@@ -62,7 +71,7 @@ print_ln("Sensor client connected with ID %s", SENSOR_CLIENT_ID)
 
 # Main reactive loop - process multiple sensor readings
 for iteration in range(N_ITERATIONS):
-  print_ln("\n--- Iteration %s ---", iteration + 1)
+  print_ln("\n--- Iteration %s/%s ---", iteration + 1, N_ITERATIONS)
   
   # Start timing for this iteration
   start_timer(1)
@@ -108,11 +117,28 @@ for iteration in range(N_ITERATIONS):
   sint.reveal_to_clients([SENSOR_CLIENT_ID], [fault])
   stop_timer(13)
   
-  # Stop total timer
+  # Stop total timer and print iteration metrics
   stop_timer(1)
+  print_ln("Iteration %s complete - Timer 1: iteration total", iteration + 1)
 
 # Close client connection after all iterations
 closeclientconnection(SENSOR_CLIENT_ID)
-print_ln("\nAll iterations complete. Client connection closed.")
-print_ln("Final state: Count A=%s, Count B=%s", 
-         cntA.reveal(), cntB.reveal())
+
+# Print comprehensive metrics
+print_ln("\n" + "="*60)
+print_ln("EXPERIMENT COMPLETE")
+print_ln("="*60)
+print_ln("Configuration:")
+print_ln("  Doors: %s", N_EX)
+print_ln("  Iterations: %s", N_ITERATIONS)
+print_ln("\nFinal State:")
+print_ln("  Count A: %s", cntA.reveal())
+print_ln("  Count B: %s", cntB.reveal())
+print_ln("\nTiming Breakdown:")
+print_ln("  Timer 1: Total iteration time")
+print_ln("  Timer 10: Client data receive")
+print_ln("  Timer 11: Spec function execution")
+print_ln("  Timer 12: Result revelation")
+print_ln("  Timer 13: Client data send")
+print_ln("\nNote: Circuit complexity metrics printed below by compiler")
+print_ln("="*60)

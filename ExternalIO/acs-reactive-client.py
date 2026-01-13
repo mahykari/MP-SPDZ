@@ -81,10 +81,11 @@ def generate_sample_data(n_doors=10, n_iterations=5):
   return iterations_data
 
 if __name__ == "__main__":
-  if len(sys.argv) < 4:
-    print("Usage: ./acs-reactive-client.py <client_id> <n_parties> <n_iterations> [<door_data_file>]")
+  if len(sys.argv) < 5:
+    print("Usage: ./acs-reactive-client.py <client_id> <n_parties> <n_doors> <n_iterations> [<door_data_file>]")
     print("  client_id: Client identifier (e.g., 0)")
     print("  n_parties: Number of MPC parties (e.g., 3)")
+    print("  n_doors: Number of doors (e.g., 10 or 30)")
     print("  n_iterations: Number of sensor readings to send (e.g., 5)")
     print("  door_data_file: Optional file with door sensor data")
     print("                  If omitted, sample data will be generated")
@@ -92,18 +93,19 @@ if __name__ == "__main__":
 
   client_id = int(sys.argv[1])
   n_parties = int(sys.argv[2])
-  n_iterations = int(sys.argv[3])
-  n_doors = 10  # Must match N_EX in acs-reactive.mpc
+  n_doors = int(sys.argv[3])
+  n_iterations = int(sys.argv[4])
   
   # Read or generate door data
-  if len(sys.argv) >= 5:
-    data_file = sys.argv[4]
+  if len(sys.argv) >= 6:
+    data_file = sys.argv[5]
     print(f"Reading door data from {data_file}...")
     iterations_data = read_door_data_from_file(data_file, n_doors, n_iterations)
   else:
     print("No data file provided, generating sample data...")
     iterations_data = generate_sample_data(n_doors, n_iterations)
   
+  print(f"Configuration: {n_doors} doors, {n_iterations} iterations")
   print(f"Prepared {n_iterations} iterations of sensor data")
   
   # Connect to MPC parties
@@ -111,11 +113,23 @@ if __name__ == "__main__":
   client = Client(['localhost'] * n_parties, 14000, client_id)
   print("Connected!")
   
+  # Metrics tracking
+  total_bytes_sent = 0
+  total_bytes_received = 0
+  total_values_sent = 0
+  total_values_received = 0
+  iteration_times = []
+  send_times = []
+  receive_times = []
+  
+  # Overall experiment timer
+  experiment_start = time.time()
+  
   # Process each iteration
   for iteration in range(n_iterations):
-    print(f"\n{'='*60}")
+    print(f"\n{'.'*60}")
     print(f"ITERATION {iteration + 1}/{n_iterations}")
-    print(f"{'='*60}")
+    print(f"{'.'*60}")
     
     # Start timing for this iteration
     iter_start = time.time()
@@ -128,7 +142,14 @@ if __name__ == "__main__":
     client.send_private_inputs(door_data)
     send_end = time.time()
     send_time = send_end - send_start
-    print(f"Sensor data sent! ({send_time:.6f} seconds)")
+    send_times.append(send_time)
+    
+    # Track sent data
+    values_sent = len(door_data)
+    total_values_sent += values_sent
+    bytes_sent = values_sent * 8  # Approximate: 8 bytes per value
+    total_bytes_sent += bytes_sent
+    print(f"Sensor data sent! {values_sent} values ({bytes_sent} bytes) in {send_time:.6f}s")
     
     # Receive results: fault only
     print("Waiting for results...")
@@ -136,12 +157,20 @@ if __name__ == "__main__":
     results = client.receive_outputs(1)
     recv_end = time.time()
     recv_time = recv_end - recv_start
+    receive_times.append(recv_time)
+    
+    # Track received data
+    values_received = 1
+    total_values_received += values_received
+    bytes_received = values_received * 8
+    total_bytes_received += bytes_received
     
     fault = results[0]
     
     # Calculate total iteration time
     iter_end = time.time()
     iter_total = iter_end - iter_start
+    iteration_times.append(iter_total)
     
     print(f"\nRESULTS (Iteration {iteration + 1}):")
     print(f"-" * 60)
@@ -161,6 +190,38 @@ if __name__ == "__main__":
     if iteration < n_iterations - 1:
       time.sleep(0.5)
   
-  print(f"\n{'='*60}")
-  print(f"All {n_iterations} iterations complete!")
-  print(f"{'='*60}")
+  # Calculate total experiment time
+  experiment_time = time.time() - experiment_start
+  
+  # Print comprehensive metrics
+  print(f"\n{'-'*60}")
+  print(f"EXPERIMENT COMPLETE")
+  print(f"{'-'*60}")
+  print(f"\nConfiguration:")
+  print(f"  Client ID: {client_id}")
+  print(f"  MPC Parties: {n_parties}")
+  print(f"  Doors: {n_doors}")
+  print(f"  Iterations: {n_iterations}")
+  
+  print(f"\nTiming Metrics:")
+  print(f"  Total experiment time: {experiment_time:.3f}s")
+  print(f"  Average iteration time: {sum(iteration_times)/len(iteration_times):.3f}s")
+  print(f"  Min iteration time: {min(iteration_times):.3f}s")
+  print(f"  Max iteration time: {max(iteration_times):.3f}s")
+  print(f"  Average send time: {sum(send_times)/len(send_times):.4f}s")
+  print(f"  Average receive time: {sum(receive_times)/len(receive_times):.4f}s")
+  
+  print(f"\nCommunication Metrics:")
+  print(f"  Total values sent: {total_values_sent}")
+  print(f"  Total values received: {total_values_received}")
+  print(f"  Total bytes sent: {total_bytes_sent} ({total_bytes_sent/1024:.2f} KB)")
+  print(f"  Total bytes received: {total_bytes_received} ({total_bytes_received/1024:.2f} KB)")
+  print(f"  Per-iteration sent: {total_values_sent/n_iterations:.1f} values")
+  print(f"  Per-iteration received: {total_values_received/n_iterations:.1f} values")
+  
+  print(f"\nThroughput:")
+  print(f"  Iterations per second: {n_iterations/experiment_time:.2f}")
+  print(f"  Values sent per second: {total_values_sent/experiment_time:.1f}")
+  print(f"  Bandwidth (sent): {(total_bytes_sent/experiment_time)/1024:.2f} KB/s")
+  
+  print(f"{'-'*60}")
