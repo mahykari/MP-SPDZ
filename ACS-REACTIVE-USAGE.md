@@ -1,12 +1,14 @@
-# ACS Reactive Door Monitoring System - Usage Guide
+# ACS Reactive Door Monitoring System - Complete Guide
 
 ## Overview
 
-This guide documents the reactive door monitoring system implementation using MP-SPDZ's Shamir secret sharing protocol with external I/O.
+This guide documents the reactive door monitoring system implementation using MP-SPDZ's Shamir secret sharing protocol with external I/O. It covers both basic usage and experimental evaluation for research comparison.
 
 ## Quick Start
 
-### Compile and Run the MPC Program
+### Basic Usage
+
+**Compile and Run the MPC Program**
 
 ```bash
 # Standard security (64-bit field)
@@ -265,6 +267,16 @@ By default, MP-SPDZ is compiled for up to 128-bit primes. To use 256-bit fields:
 - Use `--batch-size 30` or lower to reduce memory usage
 - Consider using `-M` to preserve memory instruction order if needed
 
+### SSL Certificate Errors
+
+If you see handshake failures, regenerate certificates:
+
+```bash
+Scripts/setup-ssl.sh 3
+```
+
+(Certificates expire after 30 days by default)
+
 ## Performance Notes
 
 - Larger field sizes (`-F 256`) increase computation time and bandwidth
@@ -272,190 +284,306 @@ By default, MP-SPDZ is compiled for up to 128-bit primes. To use 256-bit fields:
 - Smaller batch sizes reduce memory but may reduce throughput
 - Timing measurements exclude preprocessing (offline phase)
 
-## Network Security: Party-to-Party Communication
+---
 
-### Default Security Model
+# Experimental Evaluation
 
-Party-to-party communication security depends on the protocol type:
+## Overview
 
-**Shamir (Honest-Majority Protocols):**
-- **Default: TLS-encrypted** via `CryptoPlayer`
-- Provides confidentiality and authentication
-- Uses OpenSSL with TLS 1.2
+This section covers parameterized experiments for comparing the ACS door monitoring scenario against the paper's results.
 
-**SPDZ (Dishonest-Majority Protocols):**
-- **Default: Unencrypted** via `PlainPlayer`
-- Protocol itself provides cryptographic security
-- Plaintext TCP sockets for performance
+## Configuration Parameters
 
-### TLS Encryption Details
+### Door Counts (matching paper)
+- **ACS-10**: 10 external doors
+- **ACS-30**: 30 external doors
 
-**Certificate-Based Authentication:**
-- X.509 certificates for each party
-- Location: `Player-Data/P<i>.pem` (certificate) and `P<i>.key` (private key)
-- Common name format: `P<player_number>` (e.g., P0, P1, P2)
-- Algorithm: RSA with self-signed certificates
-- **Default Validity: 1 month**
-- ⚠️ **Important**: Certificates expire after 30 days, requiring system restart with renewed certificates
+### MPC Configuration
+- **Protocol**: Shamir secret sharing (3-out-of-3)
+- **Security**: Semi-honest with honest majority
+- **Field**: 64-bit ring (configurable with -R flag)
+- **Iterations**: 5 reactive rounds per experiment
 
-**Connection Architecture:**
-- **Two separate TLS connections** per party pair
-  - One dedicated for sending
-  - One dedicated for receiving
-- Runs in separate threads for simultaneous bidirectional communication
-- Required because TLS has key renewals that prevent true one-way communication
-- Protocol: TLS 1.2 (OpenSSL via Boost.Asio SSL streams)
+## Parameterized Usage
 
-### Setting Up Encrypted Communication
+### MPC Program with Parameters
 
-**1. Generate Certificates:**
+```bash
+# Compile and run with custom door count and iterations
+Scripts/compile-run.py shamir acs-reactive 10 5 -- -N 3
+
+# 30 doors, 5 iterations
+Scripts/compile-run.py shamir acs-reactive 30 5 -- -N 3
+```
+
+**Arguments:**
+- First argument after program name: number of doors
+- Second argument: number of iterations
+- Arguments after `--` are runtime options (party count, etc.)
+
+### Client with Parameters
+
+```bash
+# 10 doors, 5 iterations
+./ExternalIO/acs-reactive-client.py 0 3 10 5
+
+# 30 doors, 5 iterations
+./ExternalIO/acs-reactive-client.py 0 3 30 5
+
+# With custom data file
+./ExternalIO/acs-reactive-client.py 0 3 10 5 sensor_data.txt
+```
+
+**Parameters:**
+- `client_id` - Client identifier (usually 0)
+- `n_parties` - Number of MPC parties (must match MPC server)
+- `n_doors` - Number of doors (must match MPC server)
+- `n_iterations` - Number of sensor readings
+- `data_file` - Optional: custom sensor data file
+
+## Automated Experiment Scripts
+
+### 1. Quick Test
+
+```bash
+./test-acs.sh
+```
+
+Runs a quick test with 10 doors and 3 iterations. Use this to verify the setup before running full experiments.
+
+**Outputs:**
+- `logs/test-mpc.log` - MPC server log
+- `logs/test-client.log` - Client log
+
+### 2. Full Experiments (10 & 30 doors)
+
+```bash
+./run-acs-experiments.sh
+```
+
+Runs experiments for both 10 and 30 doors with 5 iterations each, matching the paper's configuration.
+
+**Outputs:**
+- `logs/ACS-10-shamir.log` - MPC server log (10 doors)
+- `logs/ACS-10-shamir-client.log` - Client log (10 doors)
+- `logs/ACS-30-shamir.log` - MPC server log (30 doors)
+- `logs/ACS-30-shamir-client.log` - Client log (30 doors)
+
+### 3. Protocol Comparison
+
+```bash
+./compare-protocols.sh
+```
+
+Tests different MPC protocols (shamir, replicated, semi) with 10 doors to compare performance.
+
+**Outputs:**
+- `logs/ACS-10-{protocol}.log` - MPC server logs
+- `logs/ACS-10-{protocol}-client.log` - Client logs
+
+### 4. Result Analysis
+
+```bash
+./analyze-acs-results.py
+```
+
+Parses log files and generates comparison tables for the paper.
+
+**Output Tables:**
+1. **Circuit Complexity** - Operation counts per iteration (multiplications, comparisons)
+2. **Execution Time** - End-to-end timing and throughput
+3. **Communication Costs** - Data volumes per iteration
+4. **Timing Breakdown** - Detailed phase-by-phase timing
+5. **Protocol Comparison** - Performance across different protocols (if multiple tested)
+
+## Metrics Tracked
+
+### MPC Server Metrics
+
+**Operation Counts:**
+- Total multiplications (secret-sharing expensive operations)
+- Total comparisons (fault condition checking)
+- Per-iteration averages
+
+**Communication:**
+- Values received from client
+- Values sent to client  
+- Per-iteration averages
+
+**Detailed Timing (5 timers):**
+- Timer 1: Total iteration time
+- Timer 10: Client data receive time
+- Timer 11: Spec function execution time
+- Timer 12: Result revelation time
+- Timer 13: Client data send time
+
+### Client Metrics
+
+**Timing:**
+- Total experiment time
+- Average/min/max iteration time
+- Average send/receive times
+- Throughput (iterations per second)
+
+**Communication:**
+- Total values/bytes sent and received
+- Per-iteration averages
+- Bandwidth calculations (KB/s)
+
+## Log Files Explained
+
+### Experiment Logs
+- **ACS-{doors}-{protocol}.log** - Combined MPC server output (all parties)
+- **ACS-{doors}-{protocol}-client.log** - Client-side metrics
+- **test-mpc.log / test-client.log** - Quick test outputs
+
+### Individual Party Logs
+- **acs-reactive-{doors}-{iterations}-{party}** - Individual party logs
+  - Example: `acs-reactive-10-5-0` = Party 0, 10 doors, 5 iterations
+  - Parties numbered 0, 1, 2
+  - Kept for debugging; Party 0 typically has complete metrics
+
+## Understanding the Results
+
+### Circuit Complexity
+
+**Multiplications:**
+- Most expensive operation in secret sharing
+- Formula: 4 multiplications per iteration (for fault condition handling)
+- Counts secret multiplication operations (not simple additions)
+
+**Comparisons:**
+- 1 comparison per iteration (cntA < cntB check)
+- Cost depends on bit-length of comparison
+- Uses bit decomposition and circuits
+
+**Total Operations:**
+- Sum of multiplications and comparisons
+- Linear scaling with door count
+
+### Communication Volumes
+
+**Per Iteration:**
+- Client sends: n_doors × 4 values (enteredA, exitedA, enteredB, exitedB)
+- Client receives: 1 value (fault bit)
+- Total: scales linearly with door count
+
+### Timing
+
+**Expected Scaling:**
+- Operations scale linearly with door count
+- Communication rounds remain constant
+- Network latency affects overall timing
+- Preprocessing (offline phase) excluded from measurements
+
+### Comparison to Paper
+
+**Their approach (ZK proofs over DDH groups):**
+- Circuit size: Boolean gates (register width affects gate count)
+- Security: Computational (based on DDH hardness)
+- Gate types: AND, XOR gates in Boolean circuit
+
+**Our approach (Shamir secret sharing):**
+- Circuit size: Secret-sharing operations (field multiplications, comparisons)
+- Security: Information-theoretic (unconditionally secure)
+- Operation types: Field arithmetic, bit decomposition
+
+**Comparison Strategy:**
+- Focus on **relative scaling** (how performance changes with door count)
+- Emphasize **absolute timing** improvements
+- Note that register width (16-bit vs 32-bit) doesn't directly translate
+  - In Boolean circuits: more bits = more gates
+  - In our approach: field size is fixed, bit-length matters for comparisons only
+
+## Running Experiments
+
+### Quick Start Workflow
+
+```bash
+# 1. Quick test to verify setup
+./test-acs.sh
+
+# 2. Run full experiments (10 & 30 doors)
+./run-acs-experiments.sh
+
+# 3. Analyze and generate tables
+./analyze-acs-results.py
+```
+
+### Testing Different Protocols
+
+Edit `run-acs-experiments.sh` or `compare-protocols.sh` to change protocol:
+
+```bash
+PROTOCOL="replicated"  # or "semi", "semi2k", etc.
+```
+
+Available protocols (semi-honest, honest majority):
+- **shamir** - Shamir secret sharing
+- **replicated** - Replicated secret sharing (optimized for 3 parties)
+- **semi** - Generic semi-honest protocol
+- **semi2k** - Ring-based semi-honest protocol
+
+### Manual Execution
+
+```bash
+# 1. Compile
+./compile.py -R 64 acs-reactive
+
+# 2. Run MPC server (in background)
+Scripts/compile-run.py shamir acs-reactive 10 5 -- -N 3 > logs/manual-mpc.log 2>&1 &
+
+# 3. Wait for server to start
+sleep 3
+
+# 4. Run client
+./ExternalIO/acs-reactive-client.py 0 3 10 5 | tee logs/manual-client.log
+```
+
+## Troubleshooting Experiments
+
+### SSL Certificate Errors
+
+Regenerate certificates:
+
 ```bash
 Scripts/setup-ssl.sh 3
 ```
-- Generates certificates for 3 parties (P0, P1, P2)
-- Creates `Player-Data/P*.pem` and `Player-Data/P*.key` files
 
-**2. Hash Certificate Directory:**
-```bash
-c_rehash Player-Data/
-```
-- Creates symlinks for certificate lookup
-- Must be run on all hosts
+### Client Connection Refused
 
-**3. Certificate Distribution:**
-- **All parties must have the same certificates** (copy entire Player-Data/ directory)
-- Certificates should be identical on every host
-- Include `.pem`, `.key`, and `.0` (symlink) files
+- MPC server not started yet (wait 3-5 seconds after starting)
+- Port 14000 already in use (check for existing processes)
+- Wrong number of parties (client and server must match)
 
-**4. Verification:**
-Check certificate signatures match across parties:
-```bash
-openssl x509 -in Player-Data/P0.pem -noout -fingerprint
-```
+### Mismatched Door Counts
 
-**5. Check Expiration:**
-```bash
-openssl x509 -in Player-Data/P0.pem -noout -enddate
-```
+If client and server have different door counts, the client will hang waiting for a response. Ensure both use the same values.
 
-### Periodic System Restart Requirement
+### Out of Memory During Compilation
 
-**TLS certificates expire after 30 days by default.** This means:
-
-1. **System must be restarted at least monthly** to use renewed certificates
-2. Before expiration, regenerate certificates:
-   ```bash
-   Scripts/setup-ssl.sh 3
-   c_rehash Player-Data/
-   ```
-3. Restart all parties to establish new TLS connections
-4. Attempting to run with expired certificates will cause handshake failures
-
-**For longer validity periods**, generate certificates manually:
-```bash
-# Generate certificates valid for 1 year
-openssl req -newkey rsa:2048 -nodes -x509 -days 365 \
-    -out Player-Data/P0.pem -keyout Player-Data/P0.key -subj "/CN=P0"
-```
-
-This periodic restart requirement is inherent to the TLS-based security model and cannot be avoided without certificate renewal.
-
-### Manual Override Options
-
-Force encryption or plaintext regardless of protocol defaults:
+Use smaller batch sizes:
 
 ```bash
-# Force TLS encryption (even for dishonest-majority protocols)
-./shamir-party.x -e <program_name> ...
-# or
-./shamir-party.x --encrypted <program_name> ...
-
-# Force unencrypted (even for honest-majority protocols)
-./shamir-party.x -u <program_name> ...
-# or
-./shamir-party.x --unencrypted <program_name> ...
+Scripts/compile-run.py shamir acs-reactive 30 5 -- -N 3 --batch-size 30
 ```
 
-### For ACS Reactive System
+## Performance Notes
 
-**Default Configuration:**
-- Shamir protocol uses **TLS encryption by default**
-- Port: 5000 + player number (e.g., 5000, 5001, 5002)
-- Requires SSL certificates generated by `Scripts/setup-ssl.sh`
+- **Field size**: Larger fields (128-bit, 256-bit) increase computation time
+- **Door count**: Linear impact on operations and communication
+- **Party count**: More parties = more communication rounds
+- **Protocol choice**: Replicated is fastest for 3 parties; Shamir more flexible
+- **Timing exclusions**: Preprocessing/offline phase excluded from measurements
 
-**Running without certificates:**
-If you haven't set up SSL and get handshake errors:
-```bash
-# Generate certificates first
-Scripts/setup-ssl.sh 3
-c_rehash Player-Data/
+## Next Steps for Research
 
-# Then run the system
-Scripts/compile-run.py shamir acs-reactive -- -N 3 --batch-size 30
-```
-
-**Multi-host deployment:**
-1. Generate certificates on one machine
-2. Copy entire `Player-Data/` directory to all hosts
-3. Run `c_rehash Player-Data/` on each host
-4. Ensure certificates are still valid (1-month expiry)
-
-### Client-to-Party Communication
-
-**External I/O (Client connections):**
-- Port: 14000 (hardcoded in `acs-reactive.mpc`)
-- **Not encrypted by default**
-- Uses plaintext TCP sockets
-- Separate from party-to-party communication
-
-**For production environments:**
-Consider encrypting client connections separately or using:
-- SSH tunnels
-- VPN
-- Application-level encryption
-
-### Security Properties
-
-**What TLS provides:**
-- **Confidentiality**: Data encrypted in transit
-- **Authentication**: Certificate-based party verification
-- **Integrity**: Tamper detection via MAC
-
-**What TLS doesn't provide:**
-- **Protocol-level security**: Provided by MPC protocol (e.g., Shamir secret sharing)
-- **Protection from compromised parties**: Up to threshold T parties can be corrupted
-
-**Defense-in-depth:**
-- TLS encryption: Network-level security
-- Shamir secret sharing: Information-theoretic security for privacy
-- Combined: Strong security even if some network traffic is observed
-
-### Troubleshooting Network Security
-
-**"Handshake failed" errors:**
-```
-Client-side handshake with P1 failed. Make sure both sides have the necessary certificate
-```
-- Ensure all parties have the same `Player-Data/*.pem` files
-- Run `c_rehash Player-Data/` on all hosts
-- Check certificate validity (regenerate if expired after 1 month)
-- Verify certificate signatures match across hosts
-
-**Certificate not found:**
-```
-Cannot access Player-Data/P0.pem. Have you set up SSL?
-```
-- Run `Scripts/setup-ssl.sh <nparties>`
-- Ensure `Player-Data/` directory exists
-
-**Port conflicts:**
-- Default ports: 5000 + player_number
-- Change with `-pn` or `--portnumbase` flag
-- Ensure ports are open in firewall
-
-## Additional Resources
-
-- [MP-SPDZ Documentation](https://mp-spdz.readthedocs.io/)
-- [Networking Setup](https://mp-spdz.readthedocs.io/en/latest/networking.html)
-- [External I/O Documentation](https://mp-spdz.readthedocs.io/en/latest/io.html)
-- [Troubleshooting Handshake Failures](https://mp-spdz.readthedocs.io/en/latest/troubleshooting.html#handshake-failures)
+1. **Run all experiments** using `./run-acs-experiments.sh`
+2. **Generate comparison tables** with `./analyze-acs-results.py`
+3. **Extract key metrics** from tables for paper
+4. **Test additional protocols** if needed for comparison
+5. **Vary party counts** (3, 5, 7 parties) for scalability analysis
+6. **Compare against paper's results** focusing on:
+   - Absolute timing (we should be faster)
+   - Relative scaling (similar linear growth)
+   - Communication efficiency
