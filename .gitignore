@@ -4,6 +4,7 @@ Player-Data
 Player-Data/*
 Prep-Data/*
 logs/*
+*/logs/
 Language-Definition/main.pdf
 keys/*
 
