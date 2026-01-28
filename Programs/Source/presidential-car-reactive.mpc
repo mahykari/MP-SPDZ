@@ -1,0 +1,139 @@
+# Reactive Presidential Car Monitoring System (Adaptive Geofence)
+# Continuously processes displacement inputs and maintains secret location state.
+#
+# Run with: Scripts/compile-run.py <protocol> presidential-car-monitor -- -N 3
+# Parameters: <n_iterations>
+# Example: Scripts/compile-run.py shamir presidential-car-monitor -- -N 3 1000
+
+from Compiler.library import *
+
+# Performance optimization
+program.use_edabit(True)
+
+# Parse command-line arguments
+if len(program.args) >= 3:
+    DIM = int(program.args[1])
+    N_ITERATIONS = int(program.args[2])
+else:
+    DIM = 2
+    N_ITERATIONS = 1000
+
+PORT_NUM = 14001  # Port for client connections (match your client)
+
+# Timer IDs
+TIMER_TOTAL   = 1
+TIMER_RECEIVE = 10
+TIMER_COMPUTE = 11
+TIMER_REVEAL  = 12
+TIMER_SEND    = 13
+
+# Adaptive geofence parameters (public constants)
+R0    = 50     # initial tight perimeter
+ALPHA = 5      # growth per time step
+RMAX  = 1000   # city boundary cap
+
+def radius_sq_adaptive(t):
+  # Scale radius by sqrt(DIM) => compare squared values:
+  # r(t)^2 = DIM * (R0 + ALPHA*t)^2, capped at DIM * RMAX^2
+  base = R0 + ALPHA * t          # sint
+  base_sq = base * base          # sint
+
+  r_sq = DIM * base_sq           # sint (DIM is public int)
+  cap_sq = DIM * (RMAX * RMAX)   # public int * public int => used in sint expr
+
+  cap = (r_sq <= cap_sq)         # sint bit
+  return cap * r_sq + (1 - cap) * cap_sq
+
+
+def spec_function(pos_in, fault_in, t, deltas):
+    # Apply displacement
+    pos = [pos_in[i] + deltas[i] for i in range(DIM)]
+
+    # dist_sq = sum(pos[i]^2)
+    dist_sq = sint(0)
+    for i in range(DIM):
+        dist_sq += pos[i] * pos[i]
+
+    inside = dist_sq <= radius_sq_adaptive(t)
+    new_fault = 1 - inside
+    fault = (fault_in + new_fault) > 0
+
+    # Freeze-on-fault (mirrors your ACS style)
+    pos_out = [(1 - fault) * pos[i] + fault * pos_in[i] for i in range(DIM)]
+    return fault, pos_out
+
+print_ln("="*60)
+print_ln("Reactive Presidential Car Monitoring System")
+print_ln("Configuration: %s iterations", N_ITERATIONS)
+print_ln("Adaptive geofence: r(t)=min(%s, %s + %s*t)", RMAX, R0, ALPHA)
+print_ln("Input per iteration: %s displacement values (secret ints)", DIM)
+print_ln("="*60)
+
+# Initialize secret state
+pos = [sint(0) for _ in range(DIM)]
+fault_state = sint(0)
+print_ln("Initialized state: pos=0^%s, fault=0", DIM)
+
+# Setup client connection
+listen_for_clients(PORT_NUM)
+print_ln("Listening for client on port %s", PORT_NUM)
+
+CLIENT_ID = accept_client_connection(PORT_NUM)
+print_ln("Client connected with ID %s", CLIENT_ID)
+
+# Main reactive loop
+for iteration in range(N_ITERATIONS):
+    print_ln("\n--- Iteration %s/%s ---", iteration + 1, N_ITERATIONS)
+
+    # Start timing for this iteration
+    start_timer(TIMER_TOTAL)
+
+    # Receive inputs from client: t, dx, dy
+    print_ln("Receiving displacement input...")
+    start_timer(TIMER_RECEIVE)
+    vals = sint.receive_from_client(DIM, CLIENT_ID)
+    stop_timer(TIMER_RECEIVE)
+    
+    deltas = [vals[i] for i in range(DIM)]
+    t = sint(iteration)
+    # Evaluate spec
+    start_timer(TIMER_COMPUTE)
+    fault_state, pos = spec_function(pos, fault_state, t, deltas)
+    stop_timer(TIMER_COMPUTE)
+
+    # Reveal only what you actually want to show (fault bit)
+    start_timer(TIMER_REVEAL)
+    fault_revealed = fault_state.reveal()
+    stop_timer(TIMER_REVEAL)
+
+    print_ln("Result: Fault=%s", fault_revealed)
+
+    # Send fault back to client
+    start_timer(TIMER_SEND)
+    sint.reveal_to_clients([CLIENT_ID], [fault_state])
+    stop_timer(TIMER_SEND)
+
+    # Stop total timer
+    stop_timer(TIMER_TOTAL)
+
+# Close connection
+closeclientconnection(CLIENT_ID)
+
+# Final state (revealed once at end; cheap enough)
+print_ln("\n" + "="*60)
+print_ln("EXPERIMENT COMPLETE")
+print_ln("="*60)
+print_ln("Configuration:")
+print_ln("  Iterations: %s", N_ITERATIONS)
+print_ln("\nFinal State (revealed):")
+for i in range(DIM):
+  print_ln("  pos[%s]: %s", i, pos[i].reveal())
+print_ln("  fault: %s", fault_state.reveal())
+print_ln("\nTiming Breakdown:")
+print_ln("  Timer %s (TOTAL): Total iteration time", TIMER_TOTAL)
+print_ln("  Timer %s (RECEIVE): Client data receive", TIMER_RECEIVE)
+print_ln("  Timer %s (COMPUTE): Spec function execution", TIMER_COMPUTE)
+print_ln("  Timer %s (REVEAL): Result revelation", TIMER_REVEAL)
+print_ln("  Timer %s (SEND): Client data send", TIMER_SEND)
+print_ln("\nNote: Circuit complexity metrics printed below by compiler")
+print_ln("="*60)
