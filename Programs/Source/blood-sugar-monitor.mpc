@@ -1,0 +1,134 @@
+# Reactive Blood Sugar Monitoring System
+# Continuously monitors blood sugar levels and detects fault conditions
+# Run with: Scripts/compile-run.py <protocol> blood-sugar-monitor -- -N 3
+# Parameters: <n_iterations>
+# Example: Scripts/compile-run.py shamir blood-sugar-monitor -- -N 3 1000
+
+from Compiler.library import *
+
+# Performance optimization
+program.use_edabit(True)
+
+# Parse command-line arguments
+if len(program.args) >= 2:
+    N_ITERATIONS = int(program.args[1])   # number of sensor readings to process
+else:
+    N_ITERATIONS = 1000    # default: number of sensor readings to process
+
+PORT_NUM = 14001    # Port for client connections
+
+# Timer IDs
+TIMER_TOTAL = 1
+TIMER_RECEIVE = 10
+TIMER_COMPUTE = 11
+TIMER_REVEAL = 12
+TIMER_SEND = 13
+
+def spec_function_psi4(t, blood_sugar, fault_in):
+  """
+  Blood sugar monitoring specification function - PSI4
+  
+  Specification: If in time 600 <= t <= 700, blood sugar is above 200, 
+                 a fault has occurred.
+  
+  Args:
+    t: Current time (sint)
+    blood_sugar: Current blood sugar level (sint)
+    fault_in: Previous fault state (sint), 1 if fault already occurred, 0 otherwise
+  
+  Returns:
+    fault: 1 if fault condition is met (and stays 1 once set), 0 otherwise
+  """
+  # Check if we're in the critical time window: 600 <= t <= 700
+  in_time_window = (t >= 600) * (t <= 700)
+  
+  # Check if blood sugar is above threshold: blood_sugar > 200
+  sugar_too_high = blood_sugar > 200
+  
+  # Fault occurs if in time window AND sugar too high
+  new_fault = in_time_window * sugar_too_high
+  
+  # Once a fault occurs, it persists (latching behavior)
+  fault = fault_in + new_fault
+  # Ensure fault stays 0 or 1 (in case of multiple violations)
+  fault = fault > 0
+  
+  return fault
+
+
+print_ln("="*60)
+print_ln("Reactive Blood Sugar Monitoring System")
+print_ln("Configuration: %s iterations", N_ITERATIONS)
+print_ln("Specification PSI4: Fault if blood sugar > 200 during time 600-700")
+print_ln("="*60)
+
+# Initialize state to zero
+fault_state = sint(0)
+print_ln("Initialized state: fault=0")
+
+# Setup client connection for sensor data
+listen_for_clients(PORT_NUM)
+print_ln("Listening for sensor client on port %s", PORT_NUM)
+
+# Accept connection from sensor client
+SENSOR_CLIENT_ID = accept_client_connection(PORT_NUM)
+print_ln("Sensor client connected with ID %s", SENSOR_CLIENT_ID)
+
+# Main reactive loop - process multiple sensor readings
+for iteration in range(N_ITERATIONS):
+  print_ln("\n--- Iteration %s/%s ---", iteration + 1, N_ITERATIONS)
+  
+  # Start timing for this iteration
+  start_timer(TIMER_TOTAL)
+  
+  # Receive sensor data from client
+  # Client sends 2 values: time (t) and blood_sugar level
+  print_ln("Receiving sensor data...")
+  start_timer(TIMER_RECEIVE)
+  sensor_data = sint.receive_from_client(2, SENSOR_CLIENT_ID)
+  t = sensor_data[0]
+  blood_sugar = sensor_data[1]
+  stop_timer(TIMER_RECEIVE)
+  
+  # Run the specification function
+  start_timer(TIMER_COMPUTE)
+  fault_state = spec_function_psi4(t, blood_sugar, fault_state)
+  stop_timer(TIMER_COMPUTE)
+  
+  # Reveal and display results
+  start_timer(TIMER_REVEAL)
+  t_revealed = t.reveal()
+  blood_sugar_revealed = blood_sugar.reveal()
+  fault_revealed = fault_state.reveal()
+  stop_timer(TIMER_REVEAL)
+  
+  print_ln("Results: Time=%s, Blood Sugar=%s, Fault=%s", 
+           t_revealed, blood_sugar_revealed, fault_revealed)
+  
+  # Send fault status back to sensor client
+  start_timer(TIMER_SEND)
+  sint.reveal_to_clients([SENSOR_CLIENT_ID], [fault_state])
+  stop_timer(TIMER_SEND)
+  
+  # Stop total timer
+  stop_timer(TIMER_TOTAL)
+
+# Close client connection after all iterations
+closeclientconnection(SENSOR_CLIENT_ID)
+
+# Print comprehensive metrics
+print_ln("\n" + "="*60)
+print_ln("EXPERIMENT COMPLETE")
+print_ln("="*60)
+print_ln("Configuration:")
+print_ln("  Iterations: %s", N_ITERATIONS)
+print_ln("\nFinal State:")
+print_ln("  Fault Status: %s", fault_state.reveal())
+print_ln("\nTiming Breakdown:")
+print_ln("  Timer %s (TOTAL): Total iteration time", TIMER_TOTAL)
+print_ln("  Timer %s (RECEIVE): Client data receive", TIMER_RECEIVE)
+print_ln("  Timer %s (COMPUTE): Spec function execution", TIMER_COMPUTE)
+print_ln("  Timer %s (REVEAL): Result revelation", TIMER_REVEAL)
+print_ln("  Timer %s (SEND): Client data send", TIMER_SEND)
+print_ln("\nNote: Circuit complexity metrics printed below by compiler")
+print_ln("="*60)
