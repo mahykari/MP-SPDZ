@@ -1,0 +1,159 @@
+# Reactive Parallel Locks Monitoring System
+# Continuously processes lock requests and detects double-lock violations
+# Run with: Scripts/compile-run.py <protocol> locks-reactive -F 128 -- -N 3 --batch-size 1000
+# The -F flag sets the bit length of sint modulo prime (default: 64)
+# The --batch-size flag reduces preprocessing waste for accurate benchmarks
+# Parameters: <n_locks> <n_iterations>
+# Example: Scripts/compile-run.py shamir locks-reactive -F 128 -- -N 3 8 100 --batch-size 1000
+
+from Compiler.library import *
+
+# Performance optimization
+program.use_edabit(True)
+
+# Parse command-line arguments
+N_LOCKS = 8             # default: number of locks
+N_ITERATIONS = 100      # default: number of lock requests to process
+
+if len(program.args) >= 3:
+    N_LOCKS = int(program.args[1])        # number of locks
+    N_ITERATIONS = int(program.args[2])   # number of lock requests to process
+
+PORT_NUM = 14000    # Port for client connections
+
+def spec_function(locks_in, requests):
+  """
+  Locks monitoring specification function
+  
+  Args:
+    locks_in: Current state of all locks (list of N_LOCKS sints)
+              Each lock: 0 = UNLOCKED, 1 = LOCKED
+    requests: List of N_LOCKS request values (sints)
+              Each request encoded as 2 bits:
+              - bit 0 (cmd): 0 = unlock, 1 = lock
+              - bit 1 (skip): 0 = execute, 1 = skip
+              Decoded: 0 = UNLOCK, 1 = LOCK, 2 = SKIP
+  
+  Returns:
+    (fault, updated_locks) where fault is 1 if double-lock/unlock detected
+  """
+  # Initialize
+  fault = sint(0)
+  badseq = sint(0)
+  updated_locks = [sint(0) for _ in range(N_LOCKS)]
+  
+  # Decode requests and check for bad sequences
+  for i in range(N_LOCKS):
+    # Decode request: requests[i] can be 0 (UNLOCK), 1 (LOCK), or 2/3 (SKIP)
+    # bit 0 is cmd (lock/unlock), bit 1 is skip flag
+    skip = (requests[i] >= 2)  # if value is 2 or 3, it's a SKIP
+    cmd = requests[i] % 2      # bit 0: the lock command (0=unlock, 1=lock)
+    
+    # A bad sequence occurs if:
+    # - The request is not SKIP (!skip), AND
+    # - The command equals the current lock state (cmd == locks_in[i])
+    # This means trying to lock an already locked lock, or unlock an already unlocked lock
+    violation = (1 - skip) * (cmd == locks_in[i])
+    badseq = badseq + violation
+  
+  # Update locks
+  for i in range(N_LOCKS):
+    skip = (requests[i] >= 2)
+    cmd = requests[i] % 2
+    
+    # If skip, keep current state; otherwise use command value
+    updated_locks[i] = skip * locks_in[i] + (1 - skip) * cmd
+  
+  # Set fault and determine next state
+  # If badseq detected (any violation occurred), set fault and keep original monitor state
+  fault = (badseq > 0)
+  new_locks = [fault * locks_in[i] + (1 - fault) * updated_locks[i] 
+               for i in range(N_LOCKS)]
+  
+  return fault, new_locks
+
+
+print_ln("="*60)
+print_ln("Reactive Parallel Locks Monitoring System")
+print_ln("Configuration: %s locks, %s iterations", N_LOCKS, N_ITERATIONS)
+print_ln("="*60)
+
+# Initialize state: all locks unlocked (0)
+locks = [sint(0) for _ in range(N_LOCKS)]
+print_ln("Initialized state: all locks UNLOCKED")
+
+# Setup client connection for lock request data
+listen_for_clients(PORT_NUM)
+print_ln("Listening for lock client on port %s", PORT_NUM)
+
+# Accept connection from lock client
+LOCK_CLIENT_ID = accept_client_connection(PORT_NUM)
+print_ln("Lock client connected with ID %s", LOCK_CLIENT_ID)
+
+# Main reactive loop - process multiple lock requests
+for iteration in range(N_ITERATIONS):
+  print_ln("\n--- Iteration %s/%s ---", iteration + 1, N_ITERATIONS)
+  
+  # Start timing for this iteration
+  start_timer(1)
+  
+  # Receive lock requests from client
+  # Client sends N_LOCKS request values
+  # Each request: 0 = UNLOCK, 1 = LOCK, 2 = SKIP
+  print_ln("Receiving lock requests...")
+  start_timer(10)
+  requests = sint.receive_from_client(N_LOCKS, LOCK_CLIENT_ID)
+  stop_timer(10)
+  
+  # Run the specification function
+  start_timer(11)
+  fault, new_locks = spec_function(locks, requests)
+  stop_timer(11)
+  
+  # Update state for next iteration
+  locks = new_locks
+  
+  # Reveal and display results
+  start_timer(12)
+  fault_revealed = fault.reveal()
+  locks_revealed = [lock.reveal() for lock in locks]
+  stop_timer(12)
+  
+  print_ln("Results: Fault=%s", fault_revealed)
+  print_str("Lock states: [")
+  for i in range(N_LOCKS):
+    if i > 0:
+      print_str(", ")
+    print_str("%s", locks_revealed[i])
+  print_str("]\n")
+  
+  # Send only fault bit back to lock client
+  start_timer(13)
+  sint.reveal_to_clients([LOCK_CLIENT_ID], [fault])
+  stop_timer(13)
+  
+  # Stop total timer and print iteration metrics
+  stop_timer(1)
+  print_ln("Iteration %s complete - Timer 1: iteration total", iteration + 1)
+
+# Close client connection after all iterations
+closeclientconnection(LOCK_CLIENT_ID)
+
+# Print comprehensive metrics
+print_ln("\n" + "="*60)
+print_ln("EXPERIMENT COMPLETE")
+print_ln("="*60)
+print_ln("Configuration:")
+print_ln("  Locks: %s", N_LOCKS)
+print_ln("  Iterations: %s", N_ITERATIONS)
+print_ln("\nFinal Lock States:")
+for i in range(N_LOCKS):
+  print_ln("  Lock %s: %s", i, locks[i].reveal())
+print_ln("\nTiming Breakdown:")
+print_ln("  Timer 1: Total iteration time")
+print_ln("  Timer 10: Client data receive")
+print_ln("  Timer 11: Spec function execution")
+print_ln("  Timer 12: Result revelation")
+print_ln("  Timer 13: Client data send")
+print_ln("\nNote: Circuit complexity metrics printed below by compiler")
+print_ln("="*60)
