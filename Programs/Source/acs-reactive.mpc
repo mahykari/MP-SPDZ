@@ -19,6 +19,13 @@ else:
 
 PORT_NUM = 14000    # Port for client connections
 
+# Timer IDs
+TIMER_TOTAL = 1
+TIMER_RECEIVE = 10
+TIMER_COMPUTE = 11
+TIMER_REVEAL = 12
+TIMER_SEND = 13
+
 def spec_function(cntA_in, cntB_in, door_data):
   """
   Door monitoring specification function
@@ -74,14 +81,14 @@ for iteration in range(N_ITERATIONS):
   print_ln("\n--- Iteration %s/%s ---", iteration + 1, N_ITERATIONS)
   
   # Start timing for this iteration
-  start_timer(1)
+  start_timer(TIMER_TOTAL)
   
   # Receive door data from sensor client
   # Client sends 4 values per door: enteredA, exitedA, enteredB, exitedB
   print_ln("Receiving sensor data...")
-  start_timer(10)
+  start_timer(TIMER_RECEIVE)
   all_values = sint.receive_from_client(N_EX * 4, SENSOR_CLIENT_ID)
-  stop_timer(10)
+  stop_timer(TIMER_RECEIVE)
   
   # Parse into door_data structure
   door_data = []
@@ -94,32 +101,31 @@ for iteration in range(N_ITERATIONS):
     door_data.append((enteredA, exitedA, enteredB, exitedB))
   
   # Run the specification function
-  start_timer(11)
+  start_timer(TIMER_COMPUTE)
   fault, new_cntA, new_cntB = spec_function(cntA, cntB, door_data)
-  stop_timer(11)
+  stop_timer(TIMER_COMPUTE)
   
   # Update state for next iteration
   cntA = new_cntA
   cntB = new_cntB
   
   # Reveal and display results
-  start_timer(12)
+  start_timer(TIMER_REVEAL)
   fault_revealed = fault.reveal()
   cntA_revealed = cntA.reveal()
   cntB_revealed = cntB.reveal()
-  stop_timer(12)
+  stop_timer(TIMER_REVEAL)
   
   print_ln("Results: Fault=%s, Count A=%s, Count B=%s", 
            fault_revealed, cntA_revealed, cntB_revealed)
   
   # Send only fault bit back to sensor client
-  start_timer(13)
+  start_timer(TIMER_SEND)
   sint.reveal_to_clients([SENSOR_CLIENT_ID], [fault])
-  stop_timer(13)
+  stop_timer(TIMER_SEND)
   
-  # Stop total timer and print iteration metrics
-  stop_timer(1)
-  print_ln("Iteration %s complete - Timer 1: iteration total", iteration + 1)
+  # Stop total timer
+  stop_timer(TIMER_TOTAL)
 
 # Close client connection after all iterations
 closeclientconnection(SENSOR_CLIENT_ID)
@@ -135,10 +141,10 @@ print_ln("\nFinal State:")
 print_ln("  Count A: %s", cntA.reveal())
 print_ln("  Count B: %s", cntB.reveal())
 print_ln("\nTiming Breakdown:")
-print_ln("  Timer 1: Total iteration time")
-print_ln("  Timer 10: Client data receive")
-print_ln("  Timer 11: Spec function execution")
-print_ln("  Timer 12: Result revelation")
-print_ln("  Timer 13: Client data send")
+print_ln("  Timer %s (TOTAL): Total iteration time", TIMER_TOTAL)
+print_ln("  Timer %s (RECEIVE): Client data receive", TIMER_RECEIVE)
+print_ln("  Timer %s (COMPUTE): Spec function execution", TIMER_COMPUTE)
+print_ln("  Timer %s (REVEAL): Result revelation", TIMER_REVEAL)
+print_ln("  Timer %s (SEND): Client data send", TIMER_SEND)
 print_ln("\nNote: Circuit complexity metrics printed below by compiler")
 print_ln("="*60)
