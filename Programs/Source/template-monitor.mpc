@@ -1,0 +1,53 @@
+# Template for Reactive Monitoring Systems
+# Implements a monitor that receives system inputs at each round,
+# updates its internal state, checks for violations, and reports faults.
+#
+# Run with: Scripts/compile-run.py <protocol> <monitor-name> -F 128 -- -N 3 <n> <T> --batch-size 1000
+
+from Compiler.library import *
+
+program.use_edabit(True)
+
+# Configuration
+n, T = int(program.args[1]), int(program.args[2])
+PORT_NUM = 14000
+
+def spec_function(monitor_state, system_inputs):
+  """
+  Specification function: computes next state and checks for faults.
+  
+  Returns: (fault, new_state)
+    - fault: 1 if violation detected, 0 otherwise
+    - new_state: updated state (or original state if fault)
+  """
+  # Compute next state
+  next_state = δ(monitor_state, system_inputs)
+  
+  # Check fault condition
+  fault = φ(next_state)
+  
+  # Return original state if fault, otherwise return next state
+  final_state = fault * monitor_state + (1 - fault) * next_state
+  
+  return fault, final_state
+
+# Initialize monitor state
+monitor_state = ...
+
+# Setup client connection
+listen_for_clients(PORT_NUM)
+CLIENT_ID = accept_client_connection(PORT_NUM)
+
+# Main reactive loop
+for t in range(T):
+  # Receive system inputs
+  system_inputs = sint.receive_from_client(n, CLIENT_ID)
+  
+  # Evaluate specification
+  fault, monitor_state = spec_function(monitor_state, system_inputs)
+  
+  # Send fault status back to client
+  sint.reveal_to_clients([CLIENT_ID], [fault])
+
+# Close connection
+closeclientconnection(CLIENT_ID)
