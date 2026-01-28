@@ -160,7 +160,7 @@ def print_table1_circuit_size(results):
     print(f"{'Scenario':<20} {'Doors':<8} {'Triples':<10} {'BitTrip':<10} {'VMRnds':<8} {'Dabits':<8}")
     print("-"*70)
     
-    for config, data in sorted(results.items()):
+    for config, data in sorted(results.items(), key=lambda x: x[1]['doors']):
         mpc = data['mpc']
         doors = mpc['doors'] if mpc['doors'] is not None else 0
         int_triples = mpc['integer_triples'] if mpc['integer_triples'] is not None else 0
@@ -182,7 +182,7 @@ def print_table2_timing(results):
     print(f"{'Scenario':<20} {'Doors':<8} {'Total(s)':<11} {'PerIter(s)':<12} {'Iter/s':<8}")
     print("-"*70)
     
-    for config, data in sorted(results.items()):
+    for config, data in sorted(results.items(), key=lambda x: x[1]['doors']):
         client = data['client']
         mpc = data['mpc']
         doors = mpc['doors'] if mpc['doors'] is not None else 0
@@ -204,7 +204,7 @@ def print_table3_communication(results):
     print(f"{'Scenario':<20} {'Doors':<8} {'Sent(MB)':<11} {'Global(MB)':<13} {'PerParty':<10}")
     print("-"*70)
     
-    for config, data in sorted(results.items()):
+    for config, data in sorted(results.items(), key=lambda x: x[1]['doors']):
         mpc = data['mpc']
         doors = mpc['doors'] if mpc['doors'] is not None else 0
         
@@ -225,7 +225,7 @@ def print_table4_breakdown(results):
     print(f"{'Scenario':<20} {'Recv':<9} {'Compute':<9} {'Reveal':<9} {'Send':<9} {'Total':<9}")
     print("-"*70)
     
-    for config, data in sorted(results.items()):
+    for config, data in sorted(results.items(), key=lambda x: x[1]['doors']):
         mpc = data['mpc']
         iters = mpc['iterations'] if mpc['iterations'] is not None and mpc['iterations'] > 0 else 1
         
@@ -242,10 +242,12 @@ def print_table4_breakdown(results):
     print()
 
 def main():
-    logs_dir = Path("logs")
+    # Change to script's directory, then to parent (root), then access logs
+    script_dir = Path(__file__).parent
+    logs_dir = script_dir / "logs"
     
     if not logs_dir.exists():
-        print("Error: logs/ directory not found. Run experiments first.")
+        print("Error: acs-scripts/logs/ directory not found. Run experiments first.")
         return
     
     # Collect results - look for all protocol variants
@@ -318,14 +320,15 @@ def main():
     # Draw ASCII visualizations
     draw_ascii_charts(results)
     
+    # Uncomment the following lines to print the raw data.
     # Print raw data for verification
-    print("\n" + "="*70)
-    print("RAW DATA (for verification)")
-    print("="*70)
-    for scenario, data in sorted(results.items()):
-        print(f"\n{scenario}:")
-        print(f"  MPC: {data['mpc']}")
-        print(f"  Client: {data['client']}")
+    # print("\n" + "="*70)
+    # print("RAW DATA (for verification)")
+    # print("="*70)
+    # for scenario, data in sorted(results.items()):
+    #     print(f"\n{scenario}:")
+    #     print(f"  MPC: {data['mpc']}")
+    #     print(f"  Client: {data['client']}")
 
 def print_protocol_comparison(results, protocols):
     """Print comparison across protocols"""

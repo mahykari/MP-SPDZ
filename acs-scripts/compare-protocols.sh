@@ -4,6 +4,9 @@
 
 set -e
 
+# Change to root directory
+cd "$(dirname "$0")/.."
+
 N_DOORS=10
 N_PARTIES=3
 N_ITERATIONS=5
@@ -17,24 +20,21 @@ echo "      binary-only. Using shamir as baseline."
 echo ""
 
 # Create logs directory
-mkdir -p logs
+mkdir -p acs-scripts/logs
 
 for PROTOCOL in "${PROTOCOLS[@]}"; do
     echo "======================================================================"
     echo "Testing Protocol: $PROTOCOL"
     echo "======================================================================"
     
-    # Compile
-    echo "Compiling acs-reactive.mpc..."
-    ./compile.py -R 64 acs-reactive
-    
     # Regenerate SSL certificates before each protocol
     echo "Setting up SSL certificates..."
-    Scripts/setup-ssl.sh 3 > /dev/null 2>&1
+    ./Scripts/setup-ssl.sh 3 > /dev/null 2>&1
+    ./Scripts/setup-clients.sh 1 > /dev/null 2>&1
     
-    # Run MPC server
-    echo "Starting MPC server..."
-    Scripts/compile-run.py -v $PROTOCOL acs-reactive $N_DOORS $N_ITERATIONS -- -N $N_PARTIES > "logs/ACS-${N_DOORS}-${PROTOCOL}.log" 2>&1 &
+    # Compile and run MPC server
+    echo "Compiling and starting MPC server..."
+    ./Scripts/compile-run.py -v $PROTOCOL acs-reactive $N_DOORS $N_ITERATIONS -F 128 -- -N $N_PARTIES > "acs-scripts/logs/ACS-${N_DOORS}-${PROTOCOL}.log" 2>&1 &
     MPC_PID=$!
     
     # Wait for server to start (longer for some protocols)
@@ -42,16 +42,12 @@ for PROTOCOL in "${PROTOCOLS[@]}"; do
     
     # Run client
     echo "Starting client..."
-    ./ExternalIO/acs-reactive-client.py 0 $N_PARTIES $N_DOORS $N_ITERATIONS | tee "logs/ACS-${N_DOORS}-${PROTOCOL}-client.log"
+    ./ExternalIO/acs-reactive-client.py 0 $N_PARTIES $N_DOORS $N_ITERATIONS | tee "acs-scripts/logs/ACS-${N_DOORS}-${PROTOCOL}-client.log"
     
     # Wait for MPC to finish
     wait $MPC_PID
     
     echo "Protocol $PROTOCOL complete!"
-    
-    # Clean up individual party logs (keep only summary)
-    rm -f logs/acs-reactive-${N_DOORS}-${N_ITERATIONS}-[0-9]*
-    echo "Cleaned up individual party logs"
     echo ""
     sleep 2
 done
@@ -61,5 +57,5 @@ echo "Protocol comparison complete!"
 echo "======================================================================"
 echo ""
 echo "Analyze results with:"
-echo "  ./analyze-acs-results.py"
+echo "  python3 acs-scripts/analyze-acs-results.py"
 echo ""
