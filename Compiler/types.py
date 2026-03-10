@@ -3769,7 +3769,8 @@ class _bitint(Tape._no_truth):
 
     @staticmethod
     def prep_comparison(a, b):
-        a[-1], b[-1] = b[-1], a[-1]
+        if len(a) > 1 and len(b) > 1:
+            a[-1], b[-1] = b[-1], a[-1]
     
     def comparison(self, other, const_rounds=False, index=None):
         a, b = self.expand(other)
@@ -4703,7 +4704,7 @@ class _fix(_single):
 
     @classmethod
     def coerce(cls, other, equal_precision=None):
-        if isinstance(other, (_fix, cls.clear_type)):
+        if isinstance(other, (_fix, cls.clear_type, _vectorizable)):
             return other
         else:
             return cls.conv(other)
@@ -4787,6 +4788,9 @@ class _fix(_single):
 
     def __getitem__(self, index):
         return self._new(self.v[index])
+
+    def __iter__(self):
+        return (self._new(x) for x in self.v)
 
     @vectorize 
     def add(self, other):

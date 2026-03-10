@@ -790,11 +790,16 @@ class sbitvec(_vec, _bit, _binary):
                     return cls(elements)
             get_raw_input_from = get_input_from
             @classmethod
-            def from_vec(cls, vector):
+            def from_vec(cls, vector, signed=True):
                 res = cls()
                 if isinstance(vector, sbitvec):
                     vector = vector.v
-                res.v = _complement_two_extend(list(vector), n)[:n]
+                v = list(vector)
+                if signed:
+                    v = _complement_two_extend(v, n)
+                else:
+                    v = v + [type(v[0])(0)] * (n - len(v))
+                res.v = v[:n]
                 return res
             def __init__(self, other=None, size=None):
                 instructions_base.check_vector_size(size)
@@ -806,7 +811,11 @@ class sbitvec(_vec, _bit, _binary):
                         self.v = [t(((other >> i) & 1) * ((1 << t.n) - 1))
                                   for i in range(n)]
                     elif isinstance(other, _vec):
-                        self.v = [type(x)(x) for x in self.bit_extend(other.v, n)]
+                        if isinstance(other, sbitfixvec):
+                            v = other.v.v[other.f:]
+                        else:
+                            v = other.v
+                        self.v = [type(x)(x) for x in self.bit_extend(v, n)]
                     elif isinstance(other, (list, tuple)):
                         self.v = self.bit_extend(sbitvec(other).v, n)
                     else:
@@ -816,6 +825,7 @@ class sbitvec(_vec, _bit, _binary):
             @classmethod
             def load_mem(cls, address, size=None):
                 if isinstance(address, int) or len(address) == 1:
+                    size = size or instructions_base.get_global_vector_size()
                     address = [address + i * cls.mem_size()
                                for i in range(size or 1)]
                 else:
@@ -1051,6 +1061,7 @@ class sbitvec(_vec, _bit, _binary):
     def comp_result(cls, x):
         return cls.get_type(1).from_vec([x])
     def expand(self, other, expand=True):
+        assert not isinstance(other, sbitfixvec)
         m = 1
         for x in itertools.chain(self.v, other.v if isinstance(other, sbitvec) else []):
             try:
@@ -1392,6 +1403,9 @@ class sbitintvec(sbitvec, _bitint, _number, _sbitintbase):
             a, b = self.expand(other)
         except:
             return NotImplemented
+        if len(a) == 1:
+            res = _bitint.bit_adder(a, b, get_carry=True)
+            return self.get_type(32).from_vec(res, signed=False)
         v = sbitint.bit_adder(a, b)
         return self.get_type(len(v)).from_vec(v)
     __radd__ = __add__
@@ -1477,16 +1491,17 @@ class cbitfix(object):
     malloc = staticmethod(lambda *args: cbits.malloc(*args))
     n_elements = staticmethod(lambda: 1)
     conv = staticmethod(lambda x: x)
-    load_mem = classmethod(lambda cls, *args: cls._new(cbits.load_mem(*args)))
+    load_mem = classmethod(lambda cls, *args: cls._new(
+        cbits.get_type(cls.k).load_mem(*args), adjust=False))
     store_in_mem = lambda self, *args: self.v.store_in_mem(*args)
     mem_size = staticmethod(lambda *args: 1)
     size = 1
     @classmethod
-    def _new(cls, value):
+    def _new(cls, value, adjust=True):
         if isinstance(value, list):
             return [cls._new(x) for x in value]
         res = cls()
-        if cls.k < value.unit:
+        if cls.k < value.unit and adjust:
             bits = value.bit_decompose(cls.k)
             sign = bits[-1]
             value += (sign << (cls.k)) * -1
@@ -1627,7 +1642,7 @@ class sbitfixvec(_fix, _vec, _binary):
     def __xor__(self, other):
         if util.is_zero(other):
             return self
-        return self._new(self.v ^ other.v)
+        return self._new(self.v ^ self.coerce(other).v)
     def __and__(self, other):
         return self._new(self.v & other.v)
     __rxor__ = __xor__
