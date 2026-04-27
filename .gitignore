@@ -125,3 +125,6 @@ _build/
 # temp doc files
 doc/readme.md
 doc/xml
+
+# python virtual environment
+.venv/
