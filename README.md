@@ -84,12 +84,18 @@ MP-SPDZ/                              <-- you should be here
 |   |-- analyze-prescar-results.py
 |   '-- logs/
 |
-'-- locks-scripts/
-    |-- test-locks.sh
-    |-- run-locks-experiments.sh
-    |-- analyze-locks-results.py
-    '-- logs/
+|-- locks-scripts/
+|   |-- test-locks.sh
+|   |-- run-locks-experiments.sh
+|   |-- analyze-locks-results.py
+|   '-- logs/
+|
+'-- scalability-scripts/                  <-- party-scaling sweep across all four scenarios
+    |-- run-all-scalability.sh
+    '-- analyze-scalability-results.py
 ```
+
+(Logs from the party-scaling sweep land in `logs/scalability/`, alongside MP-SPDZ's own per-party runtime logs in `logs/`.)
 
 **Key point:** All commands must be run from the `MP-SPDZ/` root directory. The scripts use relative paths like `./Scripts/compile-run.py` and `./ExternalIO/acs-reactive-client.py`.
 
@@ -379,6 +385,7 @@ The experiment scripts run parameter sweeps and collect logs for analysis.
 | Presidential Car | `presidential-car-scripts/run-presidential-car-experiments.sh` | Dimensions | 2, 4, 8, ..., 2048, 4096 | 200 |
 | Locks | `locks-scripts/run-locks-experiments.sh` | Locks | 100, 300, 500, 1000 | 100 |
 | Blood Sugar | `blood-sugar-scripts/test-blood-sugar.sh` | (fixed) | 1000 iterations | 1000 |
+| All four (party scaling) | `scalability-scripts/run-all-scalability.sh` | Number of Monitor parties | 3, 5, 7, 9, 11 | per-scenario (see above) |
 
 ### Running experiments and analyzing results
 
@@ -402,6 +409,23 @@ python3 presidential-car-scripts/analyze-prescar-results.py
 bash locks-scripts/run-locks-experiments.sh
 python3 locks-scripts/analyze-locks-results.py
 ```
+
+#### Party-scaling sweep (all four scenarios at largest parameter, varying $N$)
+
+`run-all-scalability.sh` re-runs each scenario at its largest parameter while
+sweeping the number of Monitor parties $N \in \{3, 5, 7, 9, 11\}$. Each circuit
+is compiled once up front, and the same bytecode is reused across every party
+count (the bytecode does not depend on $N$).
+
+```bash
+bash scalability-scripts/run-all-scalability.sh
+python3 scalability-scripts/analyze-scalability-results.py
+```
+
+Logs land in `logs/scalability/` with names like `ACS-1000-N5-shamir.log`
+and `PRESCAR-1024D-N7-shamir-client.log`. The analyzer prints per-iteration
+total time, per-iteration data sent, and a per-scenario timing breakdown,
+all indexed by $N$.
 
 ### Where Logs End Up
 
